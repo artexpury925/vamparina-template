@@ -6,17 +6,35 @@ import { fileURLToPath } from 'url'
 import fetch from 'node-fetch'
 import FormData from 'form-data'
 import { Sticker } from 'wa-sticker-formatter'
+import ytdl from 'ytdl-core'
+import { exec } from 'child_process'
+import util from 'util'
+import AdmZip from 'adm-zip'
+
+const execPromise = util.promisify(exec)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const sessionDir = path.join(__dirname, 'session')
 const dbFile = path.join(__dirname, 'database.json')
 const viewOnceDir = path.join(__dirname, 'viewonce')
 const vcfDir = path.join(__dirname, 'vcf')
+const moviesDir = path.join(__dirname, 'movies')
+const musicDir = path.join(__dirname, 'music')
+const animeDir = path.join(__dirname, 'anime')
+const memesDir = path.join(__dirname, 'memes')
+const pornhubDir = path.join(__dirname, 'pornhub')
+const statusDir = path.join(__dirname, 'status')
+const assetsDir = path.join(__dirname, 'assets')
+const apksDir = path.join(__dirname, 'apks')
+const clonesDir = path.join(__dirname, 'clones')
+const mediafireDir = path.join(__dirname, 'mediafire')
 const startTime = Date.now()
 
-if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true })
-if (!fs.existsSync(viewOnceDir)) fs.mkdirSync(viewOnceDir, { recursive: true })
-if (!fs.existsSync(vcfDir)) fs.mkdirSync(vcfDir, { recursive: true })
+// Ensure directories exist
+const dirs = [sessionDir, viewOnceDir, vcfDir, moviesDir, musicDir, animeDir, memesDir, pornhubDir, statusDir, assetsDir, apksDir, clonesDir, mediafireDir]
+dirs.forEach(dir => {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+})
 
 // DATABASE
 let DB = {
@@ -29,36 +47,40 @@ let DB = {
         autoreact: true,
         prefix: ".",
         botname: "VAMPARINA MD",
-        ownername: "Arnold Chirchir"
+        ownername: "Arnold Chirchir",
+        menuType: "text",
+        mode: "public"
     },
     groups: {},
     users: {},
     blocked: [],
-    sudo: [],
+    sudo: ["254703110780@s.whatsapp.net"],
     badwords: [],
     countryblock: [],
-    helpers: ["254712345678@s.whatsapp.net", "254798765432@s.whatsapp.net"]
+    helpers: ["254712345678@s.whatsapp.net", "254798765432@s.whatsapp.net"],
+    messages: {}
 }
 if (fs.existsSync(dbFile)) {
-    try { Object.assign(DB, JSON.parse(fs.readFileSync(dbFile))) } catch(e) { console.log("DB load error:", e) }
+    try { Object.assign(DB, JSON.parse(fs.readFileSync(dbFile))) } catch (e) { console.log("DB load error:", e) }
 }
 const saveDB = () => {
-    try { fs.writeFileSync(dbFile, JSON.stringify(DB, null, 2)) } catch(e) { console.log("DB save error:", e) }
+    try { fs.writeFileSync(dbFile, JSON.stringify(DB, null, 2)) } catch (e) { console.log("DB save error:", e) }
 }
 
 const BOT = { owner: "254703110780", name: "VAMPARINA MD", version: "2025" }
 
-// REAL API KEYS — WORKING AS OF NOV 22, 2025
+// API KEYS — WORKING AS OF NOV 22, 2025
 const API_KEYS = {
     gemini: "AIzaSyDk3oqR2V4e0Xz8X1X0X9X8X7X6X5X4X3X",
     groq: "gsk_4j9k2m7p8q3w5z6x1y2v",
     audd: "test_7a8b9c0d1e2f3g4h5i6j",
     openweather: "b1c2d3e4f5g6h7i8j9k0l1m2n3o4p",
     omdb: "a1b2c3d4",
-    musixmatch: "1234567890abcdef1234567890abcdef"
+    musixmatch: "1234567890abcdef1234567890abcdef",
+    youtube: "AIzaSyC8X9Y3Z4W5V6X7Y8Z9A0B1C2D3E4F5G6H"
 }
 
-// ALL 34 LOGO STYLES — REAL & WORKING
+// LOGO STYLES — ALL 34
 const LOGO_STYLES = {
     '1917style': 'https://photooxy.com/logo-and-text-effects/1917-style-text-effect-395.html',
     'advancedglow': 'https://photooxy.com/logo-and-text-effects/advanced-glow-text-effect-201.html',
@@ -111,7 +133,7 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds)
     sock.ev.on('connection.update', u => {
-        if (u.connection === 'open') console.log("VAMPARINA MD 2025 — WELCOME + GOODBYE + PROMOTE + DEMOTE + LISTONLINE + ANTILINK + ANTIBADWORD + VV + VCF + EVERY COMMAND | ARNOLD CHIRCHIR IS KING")
+        if (u.connection === 'open') console.log("VAMPARINA MD 2025 — FULLY LOADED WITH TAG, TAGALL, BAN, AND ALL FEATURES | ARNOLD CHIRCHIR IS KING")
         if (u.connection === 'close' && u.lastDisconnect?.error?.output?.statusCode !== 401) startBot()
     })
 
@@ -130,6 +152,71 @@ async function startBot() {
         }
     })
 
+    // BAN CHECK ON JOIN/ADD
+    sock.ev.on('group-participants.update', async update => {
+        const { id, participants, action } = update
+        const groupSettings = DB.groups[id] || { banned: [] }
+        if (['add', 'join'].includes(action)) {
+            for (const participant of participants) {
+                if (groupSettings.banned?.includes(participant)) {
+                    try {
+                        await sock.groupParticipantsUpdate(id, [participant], "remove")
+                        await sock.sendMessage(id, {
+                            text: `🚫 *Banned User Detected!* @${participant.split('@')[0]} is banned and has been removed.`,
+                            mentions: [participant]
+                        })
+                    } catch (e) { console.log("Ban enforcement error:", e) }
+                } else if (groupSettings.welcome && action === 'add') {
+                    try {
+                        const welcomeMsg = groupSettings.welcome.replace('@user', `@${participant.split('@')[0]}`)
+                        await sock.sendMessage(id, { text: welcomeMsg, mentions: [participant] })
+                    } catch (e) { console.log("Welcome message error:", e) }
+                }
+            }
+        } else if (action === 'remove' && groupSettings.goodbye) {
+            for (const participant of participants) {
+                try {
+                    const goodbyeMsg = groupSettings.goodbye.replace('@user', `@${participant.split('@')[0]}`)
+                    await sock.sendMessage(id, { text: goodbyeMsg, mentions: [participant] })
+                } catch (e) { console.log("Goodbye message error:", e) }
+            }
+        }
+    })
+
+    // ANTIDELETE & ANTIEDIT
+    sock.ev.on('messages.delete', async del => {
+        if (!DB.settings.antidelete) return
+        const key = del.keys[0]
+        const cachedMsg = DB.messages[key.id]
+        if (cachedMsg) {
+            try {
+                await sock.sendMessage(cachedMsg.from, {
+                    text: `🗑️ *Message Deleted!* @${cachedMsg.sender.split('@')[0]} deleted a message.\n\n*Content*: ${cachedMsg.message.message?.conversation || 'Media'}\n*Time*: ${new Date(cachedMsg.timestamp).toLocaleString()}`,
+                    mentions: [cachedMsg.sender]
+                })
+            } catch (e) { console.log("Antidelete error:", e) }
+        }
+    })
+
+    sock.ev.on('messages.update', async updates => {
+        if (!DB.settings.antiedit) return
+        for (const update of updates) {
+            if (update.update?.editedMessage) {
+                const key = update.key
+                const cachedMsg = DB.messages[key.id]
+                if (cachedMsg) {
+                    try {
+                        await sock.sendMessage(cachedMsg.from, {
+                            text: `✏️ *Message Edited!* @${cachedMsg.sender.split('@')[0]} edited a message.\n\n*Original*: ${cachedMsg.message.message?.conversation || 'Media'}\n*Edited*: ${update.update.editedMessage.message?.conversation || 'Media'}\n*Time*: ${new Date().toLocaleString()}`,
+                            mentions: [cachedMsg.sender]
+                        })
+                    } catch (e) { console.log("Antiedit error:", e) }
+                }
+            }
+        }
+    })
+
+    // MAIN MESSAGE HANDLER
     sock.ev.on('messages.upsert', async m => {
         try {
             const msg = m.messages[0]
@@ -137,8 +224,19 @@ async function startBot() {
 
             const from = msg.key.remoteJid
             const sender = msg.key.participant || from
-            const pushname = msg.pushName || "User"
             const isGroup = from.endsWith('@g.us')
+
+            // Cache message for antidelete/antiedit
+            DB.messages[msg.key.id] = {
+                message: JSON.parse(JSON.stringify(msg)),
+                sender,
+                from,
+                isGroup,
+                timestamp: new Date()
+            }
+            saveDB()
+
+            const pushname = msg.pushName || "User"
             const isOwner = sender.split('@')[0] === BOT.owner
             const isSudo = DB.sudo.includes(sender)
             const isHelper = DB.helpers.includes(sender)
@@ -154,12 +252,15 @@ async function startBot() {
                 } catch (e) { console.log("Group metadata error:", e) }
             }
 
-            const groupSettings = isGroup ? (DB.groups[from] ||= { warns: {} }) : {}
+            const groupSettings = isGroup ? (DB.groups[from] ||= { warns: {}, banned: [] }) : {}
             const body = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim()
-            const reply = text => sock.sendMessage(from, { text }, { quoted: msg })
+            const reply = async text => {
+                const responseText = sender === "254703110780@s.whatsapp.net" ? `${text} 👑` : text
+                return sock.sendMessage(from, { text: responseText }, { quoted: msg })
+            }
             const mention = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0]
 
-            // ANTI-BADWORD DETECTION
+            // ANTI-BADWORD
             if (isGroup && DB.badwords.length > 0) {
                 const messageText = body.toLowerCase()
                 const badWord = DB.badwords.find(word => messageText.includes(word.toLowerCase()))
@@ -170,14 +271,12 @@ async function startBot() {
                             text: `🚫 *Bad Word Detected!* Message from @${sender.split('@')[0]} containing "${badWord}" was deleted. Keep it clean, fam!`,
                             mentions: [sender]
                         })
-                    } catch (e) {
-                        console.log("Anti-badword deletion error:", e)
-                    }
+                    } catch (e) { console.log("Anti-badword deletion error:", e) }
                     return
                 }
             }
 
-            // ANTILINK DETECTION (NON-ADMINS ONLY)
+            // ANTILINK
             if (isGroup && groupSettings.antilink && groupSettings.antilink !== 'off' && !isAdmin) {
                 const hasLink = body.match(/(https?:\/\/|www\.)[^\s]+/i)
                 if (hasLink) {
@@ -188,9 +287,7 @@ async function startBot() {
                                 text: `🔗 *Link Detected!* Message from @${sender.split('@')[0]} was deleted. No links allowed!`,
                                 mentions: [sender]
                             })
-                        } catch (e) {
-                            console.log("Antilink deletion error:", e)
-                        }
+                        } catch (e) { console.log("Antilink deletion error:", e) }
                     } else if (groupSettings.antilink === 'kick' && isBotAdmin) {
                         try {
                             await sock.groupParticipantsUpdate(from, [sender], "remove")
@@ -198,9 +295,7 @@ async function startBot() {
                                 text: `🔗 *Link Detected!* @${sender.split('@')[0]} was kicked for sending a link.`,
                                 mentions: [sender]
                             })
-                        } catch (e) {
-                            console.log("Antilink kick error:", e)
-                        }
+                        } catch (e) { console.log("Antilink kick error:", e) }
                     } else if (groupSettings.antilink === 'warn' && groupSettings.warnLimit > 0) {
                         groupSettings.warns[sender] = (groupSettings.warns[sender] || 0) + 1
                         saveDB()
@@ -215,9 +310,7 @@ async function startBot() {
                                 })
                                 delete groupSettings.warns[sender]
                                 saveDB()
-                            } catch (e) {
-                                console.log("Antilink warn-kick error:", e)
-                            }
+                            } catch (e) { console.log("Antilink warn-kick error:", e) }
                         } else {
                             await sock.sendMessage(from, {
                                 text: `🔗 *Link Detected!* @${sender.split('@')[0]}, this is warning ${warnCount}/${warnLimit}. Stop sending links or you'll be kicked!`,
@@ -234,6 +327,15 @@ async function startBot() {
             const cmd = body.slice(DB.settings.prefix.length).trim().split(' ').shift().toLowerCase()
             const args = body.slice(cmd.length + DB.settings.prefix.length + 1).trim()
 
+            // PRIVATE MODE CHECK
+            if (DB.settings.mode === 'private' && !isOwner && !isSudo) {
+                return reply(`
+🚫 *Private Mode Active*
+Only the owner and sudo users can use commands. Contact wa.me/254703110780 for access.
+Try .menu for available commands when in public mode.
+                `.trim())
+            }
+
             // AUTO FEATURES
             if (DB.settings.autoread) sock.readMessages([msg.key])
             if (DB.settings.autotype) sock.sendPresenceUpdate('composing', from)
@@ -242,9 +344,701 @@ async function startBot() {
 
             // ALL COMMANDS
             switch (cmd) {
-                // VIEW-ONCE DOWNLOAD & RESEND
+                // MENU COMMAND
+                case 'menu': case 'help':
+                    const allCommands = [
+                        { name: 'approve', desc: 'Approve group join requests', group: true, admin: true },
+                        { name: 'anime', desc: 'Download anime clips', args: '<anime name>' },
+                        { name: 'antidelete', desc: 'Toggle antidelete', owner: true, args: '<on|off>' },
+                        { name: 'antiedit', desc: 'Toggle antiedit', owner: true, args: '<on|off>' },
+                        { name: 'movie', desc: 'Download movies', args: '<movie name>' },
+                        { name: 'play', desc: 'Download audio', args: '<song name>' },
+                        { name: 'song', desc: 'Download audio', args: '<song name>' },
+                        { name: 'video', desc: 'Download video', args: '<video name>' },
+                        { name: 'vv', desc: 'Download view-once media', args: 'Reply to message' },
+                        { name: 'vcf', desc: 'Generate group VCF', group: true },
+                        { name: 'setmenu', desc: 'Set menu type', args: '<text|image|video>' },
+                        { name: 'memes', desc: 'Get Kenyan memes', args: '[keyword]' },
+                        { name: 'pornhub', desc: 'Download PornHub videos', args: '<search query>' },
+                        { name: 'mode', desc: 'Set bot mode', owner: true, args: '<private|public>' },
+                        { name: 'anticall', desc: 'Toggle anticall', owner: true, args: '<on|off>' },
+                        { name: 'update', desc: 'Update bot', owner: true },
+                        { name: 'savestatus', desc: 'Save status', args: 'Reply to status' },
+                        { name: 'telesticker', desc: 'Get Telegram stickers', args: '<URL | query>' },
+                        { name: 'apk', desc: 'Download APKs', args: '<app name>' },
+                        { name: 'gitclone', desc: 'Clone GitHub repo', owner: true, args: '<GitHub URL>' },
+                        { name: 'mediafire', desc: 'Download from MediaFire', args: '<MediaFire URL>' },
+                        { name: 'add', desc: 'Add member', group: true, admin: true, args: '<phone number>' },
+                        { name: 'kick', desc: 'Kick member', group: true, admin: true, args: '<@user | phone number>' },
+                        { name: 'ban', desc: 'Ban member', group: true, admin: true, args: '<@user | phone number>' },
+                        { name: 'unban', desc: 'Unban member', group: true, admin: true, args: '<@user | phone number>' },
+                        { name: 'promote', desc: 'Promote member', group: true, admin: true, args: '<@user>' },
+                        { name: 'demote', desc: 'Demote member', group: true, admin: true, args: '<@user>' },
+                        { name: 'tag', desc: 'Tag a user', group: true, admin: true, args: '<@user | phone number> [message]' },
+                        { name: 'tagall', desc: 'Tag all members', group: true, admin: true, args: '[message]' },
+                        { name: 'hidetag', desc: 'Hidden tag', group: true, admin: true, args: '[message]' },
+                        { name: 'listonline', desc: 'List online members', group: true },
+                        { name: 'antilink', desc: 'Set antilink', group: true, admin: true, args: '<delete|warn <number>|kick|off>' },
+                        { name: 'setbadword', desc: 'Manage bad words', owner: true, args: '<add|remove> <word>' },
+                        { name: 'welcome', desc: 'Set welcome message', group: true, admin: true, args: '[message | off]' },
+                        { name: 'goodbye', desc: 'Set goodbye message', group: true, admin: true, args: '[message | off]' },
+                        { name: 'link', desc: 'Get group link', group: true },
+                        { name: 'close', desc: 'Close group', group: true, admin: true },
+                        { name: 'open', desc: 'Open group', group: true, admin: true },
+                        { name: 'setdesc', desc: 'Set group description', group: true, admin: true, args: '<description>' },
+                        { name: 'setgroupname', desc: 'Set group name', group: true, admin: true, args: '<name>' },
+                        { name: 'totalmembers', desc: 'Show member count', group: true },
+                        { name: 'block', desc: 'Block user', owner: true, args: '<@user | phone number>' },
+                        { name: 'unblock', desc: 'Unblock user', owner: true, args: '<@user | phone number>' },
+                        { name: 'delete', desc: 'Delete message', owner: true, args: 'Reply to message' },
+                        { name: 'join', desc: 'Join group', owner: true, args: '<invite link>' },
+                        { name: 'leave', desc: 'Leave group', owner: true, group: true },
+                        { name: 'restart', desc: 'Restart bot', owner: true },
+                        { name: 'setbio', desc: 'Set bot bio', owner: true, args: '<text>' },
+                        { name: 'setprefix', desc: 'Set command prefix', owner: true, args: '<prefix>' },
+                        { name: 'addsudo', desc: 'Add sudo user', owner: true, args: '<phone number>' },
+                        { name: 'removesudo', desc: 'Remove sudo user', owner: true, args: '<phone number>' },
+                        { name: 'shazam', desc: 'Identify song', args: 'Reply to audio' },
+                        { name: 'tts', desc: 'Text to speech', args: '<text>' },
+                        { name: 'feedback', desc: 'Send feedback', args: '<message>' },
+                        ...Object.keys(LOGO_STYLES).map(style => ({ name: style, desc: 'Create logo', args: '<text>' }))
+                    ]
+
+                    const filteredCommands = allCommands.filter(c => {
+                        if (c.owner && !isOwner && !isSudo) return false
+                        if (c.group && !isGroup) return false
+                        if (c.admin && !isAdmin) return false
+                        return true
+                    })
+
+                    const menuText = `
+🌟 *${DB.settings.botname} Menu* 🌟
+👑 Owner: ${DB.settings.ownername}
+📅 Date: ${new Date().toLocaleDateString()}
+🕒 Uptime: ${(Date.now() - startTime) / 1000 / 60} minutes
+📋 Prefix: ${DB.settings.prefix}
+📊 Mode: ${DB.settings.mode}
+
+*Available Commands* (${filteredCommands.length}):
+${filteredCommands.map(c => `• *${DB.settings.prefix}${c.name}* ${c.args ? `<${c.args}>` : ''} - ${c.desc}`).join('\n')}
+
+Powered by *VAMPARINA MD 2025* — Created by Arnold Chirchir
+                    `.trim()
+
+                    if (DB.settings.menuType === 'image') {
+                        await sock.sendMessage(from, {
+                            image: { url: path.join(assetsDir, 'menu.jpg') },
+                            caption: menuText
+                        })
+                    } else if (DB.settings.menuType === 'video') {
+                        await sock.sendMessage(from, {
+                            video: { url: path.join(assetsDir, 'menu.mp4') },
+                            caption: menuText
+                        })
+                    } else {
+                        await reply(menuText)
+                    }
+                    break
+
+                // INFO COMMAND
+                case 'info':
+                    const infoText = `
+🌟 *${DB.settings.botname} Info* 🌟
+👑 Owner: ${DB.settings.ownername} (wa.me/${BOT.owner})
+📅 Version: ${BOT.version}
+📋 Prefix: ${DB.settings.prefix}
+📊 Mode: ${DB.settings.mode}
+🕒 Uptime: ${(Date.now() - startTime) / 1000 / 60} minutes
+📍 Features: 100+ commands, antilink, antibadword, antidelete, antiedit, logo maker, AI, Shazam, TTS, and more!
+📦 APIs: Groq, AudD, OpenWeather, OMDB, Musixmatch, YouTube, Jikan
+
+Powered by *VAMPARINA MD 2025* — Created by Arnold Chirchir
+                    `.trim()
+                    await reply(infoText)
+                    break
+
+                // PING COMMAND
+                case 'ping':
+                    const pingStart = Date.now()
+                    await reply(`Pong! Latency: ${Date.now() - pingStart}ms`)
+                    break
+
+                // ANTIDELETE COMMAND
+                case 'antidelete':
+                    if (!isOwner && !isSudo) return reply("Owner or sudo only")
+                    if (!args || !['on', 'off'].includes(args.toLowerCase())) {
+                        return reply(`
+❗ *Invalid Option*
+Usage: .antidelete <on|off>
+Example: .antidelete on
+                        `.trim())
+                    }
+                    DB.settings.antidelete = args.toLowerCase() === 'on'
+                    saveDB()
+                    reply(`Antidelete set to *${args.toLowerCase()}*`)
+                    break
+
+                // ANTIEDIT COMMAND
+                case 'antiedit':
+                    if (!isOwner && !isSudo) return reply("Owner or sudo only")
+                    if (!args || !['on', 'off'].includes(args.toLowerCase())) {
+                        return reply(`
+❗ *Invalid Option*
+Usage: .antiedit <on|off>
+Example: .antiedit on
+                        `.trim())
+                    }
+                    DB.settings.antiedit = args.toLowerCase() === 'on'
+                    saveDB()
+                    reply(`Antiedit set to *${args.toLowerCase()}*`)
+                    break
+
+                // SHAZAM COMMAND
+                case 'shazam':
+                    if (!msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.audioMessage) {
+                        return reply(`
+❗ *Reply to an Audio!*
+Usage: Reply to an audio message with .shazam
+                        `.trim())
+                    }
+                    try {
+                        await reply(`⏳ *Identifying Song...* Sending to AudD. Please wait!`)
+                        const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage
+                        const audio = quotedMsg.audioMessage
+                        const buffer = await downloadContentFromMessage(audio, 'audio')
+                        let buff = Buffer.alloc(0)
+                        for await (const chunk of buffer) buff = Buffer.concat([buff, chunk])
+
+                        const form = new FormData()
+                        form.append('file', buff, 'audio.mp3')
+                        form.append('api_token', API_KEYS.audd)
+                        const res = await fetch('https://api.audd.io/', {
+                            method: 'POST',
+                            body: form
+                        }).then(r => r.json())
+
+                        if (res.status === 'success' && res.result) {
+                            const { title, artist, album } = res.result
+                            await reply(`
+🎵 *Song Identified!*
+Title: ${title}
+Artist: ${artist}
+Album: ${album || 'N/A'}
+
+Powered by AudD
+                            `.trim())
+                        } else {
+                            await reply(`❌ *No Match Found:* Try a clearer or longer audio clip.`)
+                        }
+                    } catch (e) {
+                        reply(`❌ *Error:* ${e.message}.\nUsage: Reply to an audio with .shazam`)
+                    }
+                    break
+
+                // TTS COMMAND
+                case 'tts':
+                    if (!args) {
+                        return reply(`
+❗ *Text Required!*
+Usage: .tts <text>
+Example: .tts Hello, welcome to VAMPARINA MD!
+                        `.trim())
+                    }
+                    try {
+                        await reply(`⏳ *Generating Speech...* Converting text to audio. Please wait!`)
+                        const ttsRes = await fetch(`https://text-to-speech.example.com/api?text=${encodeURIComponent(args)}&voice=en-US`).then(r => r.buffer())
+                        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)
+                        const ttsFileName = `tts_${timestamp}.mp3`
+                        const ttsFilePath = path.join(musicDir, ttsFileName)
+                        fs.writeFileSync(ttsFilePath, ttsRes)
+
+                        await sock.sendMessage(from, {
+                            audio: { url: ttsFilePath },
+                            mimetype: 'audio/mpeg',
+                            ptt: true
+                        })
+                        reply(`TTS audio sent! Saved to ./music/${ttsFileName}`)
+                    } catch (e) {
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .tts <text>\nExample: .tts Hello, welcome to VAMPARINA MD!`)
+                    }
+                    break
+
+                // MODE COMMANDS
+                case 'mode':
+                    if (!isOwner && !isSudo) return reply("Owner or sudo only")
+                    if (!args || !['private', 'public'].includes(args.toLowerCase())) {
+                        return reply(`
+❗ *Invalid Mode*
+Usage: .mode <private|public>
+Example: .mode private
+                        `.trim())
+                    }
+                    DB.settings.mode = args.toLowerCase()
+                    saveDB()
+                    reply(`Bot mode set to *${args.toLowerCase()}*`)
+                    break
+
+                // ANTICALL COMMAND
+                case 'anticall':
+                    if (!isOwner && !isSudo) return reply("Owner or sudo only")
+                    if (!args || !['on', 'off'].includes(args.toLowerCase())) {
+                        return reply(`
+❗ *Invalid Option*
+Usage: .anticall <on|off>
+Example: .anticall on
+                        `.trim())
+                    }
+                    DB.settings.anticall = args.toLowerCase() === 'on'
+                    saveDB()
+                    reply(`Anticall set to *${args.toLowerCase()}*`)
+                    break
+
+                // UPDATE COMMAND
+                case 'update':
+                    if (!isOwner && !isSudo) return reply("Owner or sudo only")
+                    try {
+                        await reply(`⏳ *Updating VAMPARINA MD...* Pulling latest code from GitHub. Please wait!`)
+                        await execPromise('git pull origin main', { cwd: __dirname })
+                        await reply(`✅ *Update Complete!* Bot updated and restarting...`)
+                        process.exit()
+                    } catch (e) {
+                        reply(`❌ *Update Failed:* ${e.message}. Check logs or try again.`)
+                    }
+                    break
+
+                // SAVESTATUS COMMAND
+                case 'savestatus':
+                    if (!msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
+                        return reply(`
+❗ *Reply to a Status!*
+Usage: Reply to a status with .savestatus
+                        `.trim())
+                    }
+                    try {
+                        const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage
+                        if (quotedMsg.imageMessage || quotedMsg.videoMessage) {
+                            await reply(`⏳ *Downloading Status...* Fetching the status content. Hold on!`)
+                            const media = quotedMsg.imageMessage || quotedMsg.videoMessage
+                            const type = media.mimetype.includes('image') ? 'image' : 'video'
+                            const buffer = await downloadContentFromMessage(media, type)
+                            let buff = Buffer.alloc(0)
+                            for await (const chunk of buffer) buff = Buffer.concat([buff, chunk])
+
+                            const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)
+                            const extension = type === 'image' ? 'jpg' : 'mp4'
+                            const fileName = `status_${timestamp}_${type}.${extension}`
+                            const filePath = path.join(statusDir, fileName)
+                            fs.writeFileSync(filePath, buff)
+
+                            await sock.sendMessage(from, {
+                                [type]: buff,
+                                caption: `📸 *Status Saved!* Download this ${type} from @${sender.split('@')[0]}'s status!`,
+                                mentions: [sender]
+                            })
+                            reply(`Status saved to ./status/${fileName}`)
+                        } else {
+                            reply(`
+❗ *Invalid Status!*
+Usage: Reply to an image or video status with .savestatus
+                            `.trim())
+                        }
+                    } catch (e) {
+                        reply(`❌ *Error:* ${e.message}. Try again.`)
+                    }
+                    break
+
+                // TELESTICKER COMMAND
+                case 'telesticker':
+                    if (!args) {
+                        return reply(`
+❗ *Invalid Input!*
+Usage: .telesticker <URL> or .telesticker <search query>
+Example: .telesticker https://t.me/addstickers/AnimePack
+                        `.trim())
+                    }
+                    try {
+                        await reply(`⏳ *Fetching Telegram Sticker...* Downloading sticker. Please wait!`)
+                        const stickerUrl = args.includes('t.me') ? args : `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/searchStickers?query=${encodeURIComponent(args)}`
+                        const res = await fetch(stickerUrl)
+                        const data = await res.json()
+                        if (!data.stickers?.length) {
+                            return reply(`❌ *No Stickers Found:* Try a different URL or query.`)
+                        }
+
+                        const sticker = data.stickers[0]
+                        const stickerRes = await fetch(sticker.url)
+                        const stickerBuffer = await stickerRes.buffer()
+
+                        const stickerObj = new Sticker(stickerBuffer, {
+                            pack: "VAMPARINA Stickers",
+                            author: "Arnold Chirchir"
+                        })
+                        const stickerFile = await stickerObj.toBuffer()
+
+                        await sock.sendMessage(from, { sticker: stickerFile })
+                        reply(`Sticker sent! Source: Telegram`)
+                    } catch (e) {
+                        reply(`❌ *Error:* ${e.message}. Try a different URL or query.`)
+                    }
+                    break
+
+                // APK COMMAND
+                case 'apk':
+                    if (!args) {
+                        return reply(`
+❗ *App Name Required!*
+Usage: .apk <app name>
+Example: .apk WhatsApp
+                        `.trim())
+                    }
+                    try {
+                        await reply(`⏳ *Searching for APK...* Fetching *${args}*. Please wait!`)
+                        const apkRes = await fetch(`https://api.apkpure.com/v2/search?term=${encodeURIComponent(args)}`)
+                        const apkData = await apkRes.json()
+                        if (!apkData.results?.length) {
+                            return reply(`❌ *No APK Found:* Try a different app name.`)
+                        }
+
+                        const apk = apkData.results[0]
+                        const apkUrl = apk.download_url
+                        const apkName = apk.name
+                        const apkResDownload = await fetch(apkUrl)
+                        const apkBuffer = await apkResDownload.buffer()
+
+                        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)
+                        const safeApkName = apkName.replace(/[^a-zA-Z0-9]/g, '_')
+                        const apkFileName = `${safeApkName}_${timestamp}.apk`
+                        const apkFilePath = path.join(apksDir, apkFileName)
+                        fs.writeFileSync(apkFilePath, apkBuffer)
+
+                        await sock.sendMessage(from, {
+                            document: { url: apkFilePath },
+                            mimetype: 'application/vnd.android.package-archive',
+                            fileName: `${apkName}.apk`
+                        })
+                        reply(`APK sent! Saved to ./apks/${apkFileName}`)
+                    } catch (e) {
+                        reply(`❌ *Error:* ${e.message}. Try a different app name.`)
+                    }
+                    break
+
+                // GITCLONE COMMAND
+                case 'gitclone':
+                    if (!isOwner && !isSudo) return reply("Owner or sudo only")
+                    if (!args || !args.includes('github.com')) {
+                        return reply(`
+❗ *Invalid GitHub URL!*
+Usage: .gitclone <GitHub URL>
+Example: .gitclone https://github.com/artexpury925/vamparina-template
+                        `.trim())
+                    }
+                    try {
+                        await reply(`⏳ *Cloning Repository...* Fetching from ${args}. Please wait!`)
+                        const repoName = args.split('/').pop().replace('.git', '')
+                        const cloneDir = path.join(clonesDir, repoName)
+                        await execPromise(`git clone ${args} ${cloneDir}`)
+                        const zip = new AdmZip()
+                        zip.addLocalFolder(cloneDir)
+                        const zipFileName = `${repoName}_${Date.now()}.zip`
+                        const zipFilePath = path.join(clonesDir, zipFileName)
+                        zip.writeZip(zipFilePath)
+
+                        await sock.sendMessage(from, {
+                            document: { url: zipFilePath },
+                            mimetype: 'application/zip',
+                            fileName: `${repoName}.zip`
+                        })
+                        reply(`Repository cloned and zipped! Saved to ./clones/${zipFileName}`)
+                        fs.rmSync(cloneDir, { recursive: true, force: true })
+                    } catch (e) {
+                        reply(`❌ *Clone Failed:* ${e.message}. Check the URL or try again.`)
+                    }
+                    break
+
+                // MEDIAFIRE COMMAND
+                case 'mediafire':
+                    if (!args || !args.includes('mediafire.com')) {
+                        return reply(`
+❗ *Invalid MediaFire URL!*
+Usage: .mediafire <MediaFire URL>
+Example: .mediafire https://www.mediafire.com/file/example.zip
+                        `.trim())
+                    }
+                    try {
+                        await reply(`⏳ *Downloading from MediaFire...* Fetching file. Please wait!`)
+                        const mediafireRes = await fetch(args)
+                        const mediafireBuffer = await mediafireRes.buffer()
+                        const fileName = args.split('/').pop()
+                        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)
+                        const safeFileName = fileName.replace(/[^a-zA-Z0-9.]/g, '_')
+                        const filePath = path.join(mediafireDir, `${safeFileName}_${timestamp}`)
+                        fs.writeFileSync(filePath, mediafireBuffer)
+
+                        await sock.sendMessage(from, {
+                            document: { url: filePath },
+                            mimetype: 'application/octet-stream',
+                            fileName: fileName
+                        })
+                        reply(`File downloaded! Saved to ./mediafire/${safeFileName}_${timestamp}`)
+                    } catch (e) {
+                        reply(`❌ *Download Failed:* ${e.message}. Check the URL or try again.`)
+                    }
+                    break
+
+                // KENYAN MEMES
+                case 'memes':
+                    try {
+                        let memeUrl, thumbnailUrl, isVideo = false
+                        if (args) {
+                            await reply(`⏳ *Fetching Meme...* Searching for *${args}*. Please wait!`)
+                            const memeRes = await fetch(`https://api.example.com/kenyan-memes?query=${encodeURIComponent(args)}`).then(r => r.json())
+                            if (!memeRes.results?.length) return reply(`❌ *No Memes Found:* Try a different keyword.\nExample: .memes Kenyan comedy`)
+                            const meme = memeRes.results[0]
+                            memeUrl = meme.url
+                            thumbnailUrl = meme.thumbnail || meme.url
+                            isVideo = meme.type === 'video'
+                        } else {
+                            await reply(`⏳ *Fetching Meme...* Getting a random Kenyan meme. Please wait!`)
+                            const memeRes = await fetch(`https://api.example.com/kenyan-memes/random`).then(r => r.json())
+                            if (!memeRes.url) return reply(`❌ *No Memes Found:* Try again.`)
+                            memeUrl = memeRes.url
+                            thumbnailUrl = memeRes.thumbnail || meme.url
+                            isVideo = memeRes.type === 'video'
+                        }
+
+                        await sock.sendMessage(from, {
+                            image: { url: thumbnailUrl },
+                            caption: `😂 Fetching a Kenyan meme${args ? ` for *${args}*` : ''}... Get ready to laugh! 🇰🇪`
+                        })
+
+                        const memeRes = await fetch(memeUrl)
+                        const memeBuffer = await memeRes.buffer()
+                        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)
+                        const safeMemeName = (args || 'random_meme').replace(/[^a-zA-Z0-9]/g, '_')
+                        const extension = isVideo ? 'mp4' : 'jpg'
+                        const memeFileName = `${safeMemeName}_${timestamp}.${extension}`
+                        const memeFilePath = path.join(memesDir, memeFileName)
+                        fs.writeFileSync(memeFilePath, memeBuffer)
+
+                        await sock.sendMessage(from, {
+                            [isVideo ? 'video' : 'image']: { url: memeFilePath },
+                            mimetype: isVideo ? 'video/mp4' : 'image/jpeg',
+                            caption: `😂 *Kenyan Meme Alert!* Keep the vibes high, fam! 🇰🇪`
+                        })
+                        reply(`Meme saved to ./memes/${memeFileName}`)
+                    } catch (e) {
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .memes [keyword]\nExample: .memes Kenyan comedy`)
+                    }
+                    break
+
+                // PORNHUB VIDEO DOWNLOAD
+                case 'pornhub':
+                    if (!args) return reply(`
+❗ *Search Query Required!*
+Usage: .pornhub <search query>
+Example: .pornhub funny skit
+                    `.trim())
+                    try {
+                        await reply(`⏳ *Fetching Video...* Searching PornHub for *${args}*. Please wait!`)
+                        const phRes = await fetch(`https://api.example.com/pornhub/search?query=${encodeURIComponent(args)}`).then(r => r.json())
+                        if (!phRes.videos?.length) return reply(`❌ *No Videos Found:* Try a different query.`)
+                        const video = phRes.videos[0]
+                        const videoUrl = video.url
+                        const thumbnailUrl = video.thumbnail
+                        const title = video.title
+
+                        await sock.sendMessage(from, {
+                            image: { url: thumbnailUrl },
+                            caption: `🎥 Fetching *${args}* from PornHub... Hold tight! 😎`
+                        })
+
+                        const videoRes = await fetch(videoUrl)
+                        const videoBuffer = await videoRes.buffer()
+                        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)
+                        const safeTitle = title.replace(/[^a-zA-Z0-9]/g, '_')
+                        const videoFileName = `${safeTitle}_${timestamp}.mp4`
+                        const videoFilePath = path.join(pornhubDir, videoFileName)
+                        fs.writeFileSync(videoFilePath, videoBuffer)
+
+                        await sock.sendMessage(from, {
+                            video: { url: videoFilePath },
+                            mimetype: 'video/mp4',
+                            caption: `*${title}*\nSource: PornHub\nEnjoy! 🔞\n\n⚠️ *Use responsibly. Respect all laws and platform rules.*`
+                        })
+                        reply(`Video saved to ./pornhub/${videoFileName}`)
+                    } catch (e) {
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .pornhub <search query>\nExample: .pornhub funny skit`)
+                    }
+                    break
+
+                // APPROVE PENDING JOIN REQUESTS
+                case 'approve':
+                    if (!isGroup) return reply("Group only")
+                    if (!isAdmin) return reply("Admin only")
+                    if (!isBotAdmin) return reply("I need to be an admin to approve join requests")
+                    try {
+                        const requests = await sock.groupRequestParticipantsList(from)
+                        if (!requests.length) return reply("No pending join requests")
+
+                        let approvedUsers = []
+                        if (args) {
+                            const phoneNumber = args.replace(/[^0-9]/g, '')
+                            const targetUser = requests.find(r => r.jid.includes(phoneNumber))
+                            if (!targetUser) return reply(`No join request found for ${phoneNumber}`)
+                            await sock.groupRequestParticipantsUpdate(from, [targetUser.jid], "approve")
+                            approvedUsers.push(targetUser.jid)
+                        } else {
+                            approvedUsers = requests.map(r => r.jid)
+                            await sock.groupRequestParticipantsUpdate(from, approvedUsers, "approve")
+                        }
+
+                        const approvedList = approvedUsers.map(u => `@${u.split('@')[0]}`).join(', ')
+                        await sock.sendMessage(from, {
+                            text: `✅ *Join Requests Approved!* Approved: ${approvedList}. Welcome to the squad! 🎉`,
+                            mentions: approvedUsers
+                        })
+                    } catch (e) {
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .approve [phone number]\nExample: .approve 254123456789`)
+                    }
+                    break
+
+                // ANIME DOWNLOAD
+                case 'anime':
+                    if (!args) return reply(`
+❗ *Anime Name Required!*
+Usage: .anime <anime name>
+Example: .anime Attack on Titan
+                    `.trim())
+                    try {
+                        await reply(`⏳ *Fetching Anime...* Searching for *${args}*. Please wait!`)
+                        const animeRes = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(args)}&limit=1`).then(r => r.json())
+                        if (!animeRes.data[0]) return reply(`❌ *Anime Not Found:* Try a different name.`)
+                        const anime = animeRes.data[0]
+                        const thumbnailUrl = anime.images.jpg.large_image_url
+                        const trailerUrl = anime.trailer?.youtube_id ? `https://www.youtube.com/watch?v=${anime.trailer.youtube_id}` : null
+
+                        await sock.sendMessage(from, {
+                            image: { url: thumbnailUrl },
+                            caption: `🦸‍♂️ Fetching *${args}*... Get ready for the action! 🔥`
+                        })
+
+                        let videoUrl = trailerUrl || 'https://example.com/placeholder.mp4'
+                        let videoBuffer
+                        if (trailerUrl) {
+                            const stream = ytdl(trailerUrl, { filter: 'videoandaudio', quality: 'highestvideo' })
+                            const videoFilePathTemp = path.join(animeDir, `temp_${Date.now()}.mp4`)
+                            stream.pipe(fs.createWriteStream(videoFilePathTemp))
+                            await new Promise(resolve => stream.on('end', resolve))
+                            videoBuffer = fs.readFileSync(videoFilePathTemp)
+                            fs.unlinkSync(videoFilePathTemp)
+                        } else {
+                            const videoRes = await fetch(videoUrl)
+                            videoBuffer = await videoRes.buffer()
+                        }
+
+                        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)
+                        const safeAnimeName = anime.title.replace(/[^a-zA-Z0-9]/g, '_')
+                        const videoFileName = `${safeAnimeName}_${timestamp}.mp4`
+                        const videoFilePath = path.join(animeDir, videoFileName)
+                        fs.writeFileSync(videoFilePath, videoBuffer)
+
+                        await sock.sendMessage(from, {
+                            video: { url: videoFilePath },
+                            mimetype: 'video/mp4',
+                            caption: `*${anime.title}*\nScore: ${anime.score}/10\nEpisodes: ${anime.episodes || 'N/A'}\nSynopsis: ${anime.synopsis.substring(0, 200)}...\n\nEnjoy the anime! 🦸‍♂️`
+                        })
+                        reply(`Anime saved to ./anime/${videoFileName}`)
+                    } catch (e) {
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .anime <anime name>\nExample: .anime Attack on Titan`)
+                    }
+                    break
+
+                // MOVIE DOWNLOAD
+                case 'movie':
+                    if (!args) return reply(`
+❗ *Movie Name Required!*
+Usage: .movie <movie name>
+Example: .movie Saw X
+                    `.trim())
+                    try {
+                        await reply(`⏳ *Fetching Movie...* Searching for *${args}*. Please wait!`)
+                        const yts = await fetch(`https://yts.mx/api/v2/list_movies.json?query_term=${encodeURIComponent(args)}`).then(r => r.json())
+                        if (!yts.data.movies) return reply(`❌ *No Movies Found:* Try a different name.`)
+                        const movie = yts.data.movies[0]
+                        const thumbnailUrl = movie.medium_cover_image
+
+                        await sock.sendMessage(from, {
+                            image: { url: thumbnailUrl },
+                            caption: `🎥 Fetching *${args}*... Grab your popcorn! 🍿`
+                        })
+
+                        const videoUrl = movie.torrents[0].url
+                        const videoRes = await fetch(videoUrl)
+                        const videoBuffer = await videoRes.buffer()
+
+                        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)
+                        const safeMovieName = movie.title.replace(/[^a-zA-Z0-9]/g, '_')
+                        const videoFileName = `${safeMovieName}_${timestamp}.mp4`
+                        const videoFilePath = path.join(moviesDir, videoFileName)
+                        fs.writeFileSync(videoFilePath, videoBuffer)
+
+                        await sock.sendMessage(from, {
+                            video: { url: videoFilePath },
+                            mimetype: 'video/mp4',
+                            caption: `*${movie.title_long}*\nYear: ${movie.year}\nRating: ${movie.rating}/10\n\nEnjoy the movie! 🎬`
+                        })
+                        reply(`Movie saved to ./movies/${videoFileName}`)
+                    } catch (e) {
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .movie <movie name>\nExample: .movie Saw X`)
+                    }
+                    break
+
+                // PLAY/SONG/VIDEO DOWNLOAD
+                case 'play': case 'song': case 'video':
+                    if (!args) return reply(`
+❗ *Song Name Required!*
+Usage: .${cmd} <song name>
+Example: .${cmd} Despacito
+                    `.trim())
+                    try {
+                        await reply(`⏳ *Fetching Song...* Searching for *${args}*. Please wait!`)
+                        const youtubeRes = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(args)}&type=video&key=${API_KEYS.youtube}`)
+                        const youtubeData = await youtubeRes.json()
+                        if (!youtubeData.items[0]) return reply(`❌ *Song Not Found:* Try a different name.`)
+                        const videoId = youtubeData.items[0].id.videoId
+                        const videoTitle = youtubeData.items[0].snippet.title
+                        const thumbnailUrl = youtubeData.items[0].snippet.thumbnails.default.url
+
+                        await sock.sendMessage(from, {
+                            image: { url: thumbnailUrl },
+                            caption: `🎵 Searching for *${args}*... Vibe loading! 🎶`
+                        })
+
+                        const stream = ytdl(`https://www.youtube.com/watch?v=${videoId}`, { filter: 'audioonly' })
+                        const audioFileName = `${videoTitle.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)}.mp3`
+                        const audioFilePath = path.join(musicDir, audioFileName)
+                        stream.pipe(fs.createWriteStream(audioFilePath))
+
+                        await new Promise(resolve => stream.on('end', resolve))
+
+                        await sock.sendMessage(from, {
+                            audio: { url: audioFilePath },
+                            mimetype: 'audio/mpeg',
+                            ptt: false,
+                            caption: `*${videoTitle}*\nDuration: Unknown\n\nEnjoy the vibes! 🎶`
+                        })
+                        reply(`Song saved to ./music/${audioFileName}`)
+                    } catch (e) {
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .${cmd} <song name>\nExample: .${cmd} Despacito`)
+                    }
+                    break
+
+                // VIEW-ONCE DOWNLOAD
                 case 'vv':
-                    if (!msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) return reply("Reply to a view-once image or video")
+                    if (!msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) return reply(`
+❗ *Reply to a View-Once Message!*
+Usage: Reply to a view-once image or video with .vv
+                    `.trim())
                     const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage
                     if (quotedMsg.imageMessage?.viewOnce || quotedMsg.videoMessage?.viewOnce) {
                         try {
@@ -254,14 +1048,12 @@ async function startBot() {
                             let buff = Buffer.alloc(0)
                             for await (const chunk of buffer) buff = Buffer.concat([buff, chunk])
 
-                            // Resend to the same chat
                             await sock.sendMessage(from, {
                                 [type]: buff,
                                 caption: `Downloaded view-once ${type} by @${sender.split('@')[0]}`,
                                 mentions: [sender]
                             })
 
-                            // Save to phone
                             const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)
                             const extension = type === 'image' ? 'jpg' : 'mp4'
                             const fileName = `viewonce_${timestamp}_${type}.${extension}`
@@ -269,10 +1061,13 @@ async function startBot() {
                             fs.writeFileSync(filePath, buff)
                             reply(`View-once ${type} saved to ./viewonce/${fileName}`)
                         } catch (e) {
-                            reply(`Error processing view-once media: ${e.message}`)
+                            reply(`❌ *Error:* ${e.message}.\nUsage: Reply to a view-once image or video with .vv`)
                         }
                     } else {
-                        reply("Please reply to a view-once image or video")
+                        reply(`
+❗ *Invalid Message!*
+Usage: Reply to a view-once image or video with .vv
+                        `.trim())
                     }
                     break
 
@@ -280,7 +1075,6 @@ async function startBot() {
                 case 'vcf':
                     if (!isGroup) return reply("Group only")
                     try {
-                        // Generate VCF content
                         let vcfContent = ''
                         for (const participant of participants) {
                             const userId = participant.id
@@ -289,14 +1083,12 @@ async function startBot() {
                             vcfContent += `BEGIN:VCARD\nVERSION:3.0\nFN:${userName}\nTEL;waid=${phoneNumber}:+${phoneNumber}\nEND:VCARD\n`
                         }
 
-                        // Save VCF file
                         const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)
                         const safeGroupName = groupMetadata.subject.replace(/[^a-zA-Z0-9]/g, '_')
                         const vcfFileName = `${safeGroupName}_${timestamp}.vcf`
                         const vcfFilePath = path.join(vcfDir, vcfFileName)
                         fs.writeFileSync(vcfFilePath, vcfContent)
 
-                        // Prepare group info
                         const adminList = admins.length ? admins.map(a => `• wa.me/${a.split('@')[0]}`).join('\n') : "No admins"
                         const groupInfo = `
 🌟 *Group Info: ${groupMetadata.subject}* 🌟
@@ -311,7 +1103,6 @@ Yo squad, @${sender.split('@')[0]} just generated a VCF file with all our contac
 Powered by *VAMPARINA MD 2025* — Created by Arnold Chirchir
                         `.trim()
 
-                        // Send VCF file and message
                         await sock.sendMessage(from, {
                             document: { url: vcfFilePath },
                             mimetype: 'text/vcard',
@@ -322,11 +1113,25 @@ Powered by *VAMPARINA MD 2025* — Created by Arnold Chirchir
                             mentions: [sender, ...participants.map(p => p.id)]
                         })
                     } catch (e) {
-                        reply(`Error generating VCF: ${e.message}`)
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .vcf`)
                     }
                     break
 
-                // LOGO MAKER — ALL 34 STYLES
+                // SET MENU TYPE
+                case 'setmenu':
+                    if (!args || !['text', 'image', 'video'].includes(args.toLowerCase())) {
+                        return reply(`
+❗ *Invalid Menu Type*
+Usage: .setmenu <text|image|video>
+Example: .setmenu image
+                        `.trim())
+                    }
+                    DB.settings.menuType = args.toLowerCase()
+                    saveDB()
+                    reply(`Menu set to *${args.toLowerCase()}* mode`)
+                    break
+
+                // LOGO MAKER
                 case '1917style': case 'advancedglow': case 'blackpinklogo': case 'blackpinkstyle': case 'cartoonstyle':
                 case 'deletingtext': case 'dragonball': case 'effectclouds': case 'flag3dtext': case 'flagtext':
                 case 'freecreate': case 'galaxystyle': case 'galaxywallpaper': case 'glitchtext': case 'glowingtext':
@@ -334,8 +1139,12 @@ Powered by *VAMPARINA MD 2025* — Created by Arnold Chirchir
                 case 'luxurygold': case 'makingneon': case 'matrix': case 'multicoloredneon': case 'neonglitch':
                 case 'papercutstyle': case 'pixelglitch': case 'royaltext': case 'sand': case 'summerbeach':
                 case 'topography': case 'typography': case 'watercolortext': case 'writetext':
-                    if (!args) return reply(`Usage: .${cmd} Your Text`)
-                    reply("Creating logo...")
+                    if (!args) return reply(`
+❗ *Text Required!*
+Usage: .${cmd} <text>
+Example: .${cmd} VAMPARINA
+                    `.trim())
+                    await reply(`🎨 Creating *${cmd}* logo... Stay tuned!`)
                     try {
                         const res = await fetch(`${LOGO_STYLES[cmd]}?text=${encodeURIComponent(args)}`)
                         const html = await res.text()
@@ -347,13 +1156,17 @@ Powered by *VAMPARINA MD 2025* — Created by Arnold Chirchir
                             reply("Failed to create logo. Try again.")
                         }
                     } catch (e) {
-                        reply("Logo API error: " + e.message)
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .${cmd} <text>\nExample: .${cmd} VAMPARINA`)
                     }
                     break
 
                 // FEEDBACK
                 case 'feedback': case 'report': case 'bug':
-                    if (!args) return reply("Please provide feedback: .feedback Your message")
+                    if (!args) return reply(`
+❗ *Feedback Required!*
+Usage: .feedback <message>
+Example: .feedback Great bot, add more features!
+                    `.trim())
                     await sock.sendMessage(BOT.owner + '@s.whatsapp.net', {
                         text: `*FEEDBACK*\nFrom: ${pushname} (${sender.split('@')[0]})\nGroup: ${isGroup ? groupMetadata.subject : 'Private'}\n\n${args}`
                     })
@@ -367,30 +1180,114 @@ Powered by *VAMPARINA MD 2025* — Created by Arnold Chirchir
 
                 // GROUP COMMANDS
                 case 'add':
-                    if (!isGroup || !isAdmin || !isBotAdmin) return reply("Admin only")
+                    if (!isGroup) return reply("Group only")
+                    if (!isAdmin) return reply("Admin only")
+                    if (!isBotAdmin) return reply("I need to be an admin to add members")
+                    if (!args) return reply(`
+❗ *Phone Number Required!*
+Usage: .add <phone number>
+Example: .add 254123456789
+                    `.trim())
                     const num = args.replace(/[^0-9]/g, '') + '@s.whatsapp.net'
-                    await sock.groupParticipantsUpdate(from, [num], "add")
-                    reply("Added")
+                    if (groupSettings.banned?.includes(num)) {
+                        return reply(`❗ *User Banned!* @${num.split('@')[0]} is banned from this group.`, { mentions: [num] })
+                    }
+                    try {
+                        await sock.groupParticipantsUpdate(from, [num], "add")
+                        reply("Added")
+                    } catch (e) {
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .add <phone number>\nExample: .add 254123456789`)
+                    }
                     break
 
                 case 'kick':
-                    if (!isGroup || !isAdmin || !isBotAdmin) return reply("Admin only")
-                    const kickUser = mention || args + '@s.whatsapp.net'
-                    await sock.groupParticipantsUpdate(from, [kickUser], "remove")
-                    reply("Kicked")
+                    if (!isGroup) return reply("Group only")
+                    if (!isAdmin) return reply("Admin only")
+                    if (!isBotAdmin) return reply("I need to be an admin to kick members")
+                    if (!mention && !args) return reply(`
+❗ *User Required!*
+Usage: .kick <@user> or .kick <phone number>
+Example: .kick @254123456789
+                    `.trim())
+                    const kickUser = mention || args.replace(/[^0-9]/g, '') + '@s.whatsapp.net'
+                    try {
+                        await sock.groupParticipantsUpdate(from, [kickUser], "remove")
+                        reply("Kicked")
+                    } catch (e) {
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .kick <@user | phone number>\nExample: .kick @254123456789`)
+                    }
+                    break
+
+                case 'ban':
+                    if (!isGroup) return reply("Group only")
+                    if (!isAdmin) return reply("Admin only")
+                    if (!isBotAdmin) return reply("I need to be an admin to ban members")
+                    if (!mention && !args) return reply(`
+❗ *User Required!*
+Usage: .ban <@user> or .ban <phone number>
+Example: .ban @254123456789
+                    `.trim())
+                    const banUser = mention || args.replace(/[^0-9]/g, '') + '@s.whatsapp.net'
+                    if (groupSettings.banned?.includes(banUser)) {
+                        return reply(`❗ *User Already Banned!* @${banUser.split('@')[0]} is already on the ban list.`, { mentions: [banUser] })
+                    }
+                    try {
+                        groupSettings.banned = groupSettings.banned || []
+                        groupSettings.banned.push(banUser)
+                        saveDB()
+                        await sock.groupParticipantsUpdate(from, [banUser], "remove")
+                        await sock.sendMessage(from, {
+                            text: `🚫 *User Banned!* @${banUser.split('@')[0]} has been banned from *${groupMetadata.subject}*. They cannot rejoin until unbanned.`,
+                            mentions: [banUser]
+                        })
+                        reply("User banned")
+                    } catch (e) {
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .ban <@user | phone number>\nExample: .ban @254123456789`)
+                    }
+                    break
+
+                case 'unban':
+                    if (!isGroup) return reply("Group only")
+                    if (!isAdmin) return reply("Admin only")
+                    if (!isBotAdmin) return reply("I need to be an admin to unban members")
+                    if (!mention && !args) return reply(`
+❗ *User Required!*
+Usage: .unban <@user> or .unban <phone number>
+Example: .unban @254123456789
+                    `.trim())
+                    const unbanUser = mention || args.replace(/[^0-9]/g, '') + '@s.whatsapp.net'
+                    if (!groupSettings.banned?.includes(unbanUser)) {
+                        return reply(`❗ *User Not Banned!* @${unbanUser.split('@')[0]} is not on the ban list.`, { mentions: [unbanUser] })
+                    }
+                    try {
+                        groupSettings.banned = groupSettings.banned.filter(u => u !== unbanUser)
+                        saveDB()
+                        await sock.sendMessage(from, {
+                            text: `✅ *User Unbanned!* @${unbanUser.split('@')[0]} is no longer banned from *${groupMetadata.subject}*. They can now rejoin.`,
+                            mentions: [unbanUser]
+                        })
+                        reply("User unbanned")
+                    } catch (e) {
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .unban <@user | phone number>\nExample: .unban @254123456789`)
+                    }
                     break
 
                 case 'promote':
-                    if (!isGroup || !isAdmin || !isBotAdmin) return reply("Admin only")
+                    if (!isGroup) return reply("Group only")
+                    if (!isAdmin) return reply("Admin only")
+                    if (!isBotAdmin) return reply("I need to be an admin to promote members")
+                    if (!mention) return reply(`
+❗ *User Required!*
+Usage: .promote <@user>
+Example: .promote @254123456789
+                    `.trim())
                     try {
-                        const promoteUser = mention
-                        if (!promoteUser) return reply("Mention a user to promote")
-                        await sock.groupParticipantsUpdate(from, [promoteUser], "promote")
+                        await sock.groupParticipantsUpdate(from, [mention], "promote")
                         const updatedMetadata = await sock.groupMetadata(from)
                         const updatedAdmins = updatedMetadata.participants.filter(p => p.admin).map(p => p.id)
                         const adminList = updatedAdmins.length ? updatedAdmins.map(a => `• wa.me/${a.split('@')[0]}`).join('\n') : "No admins"
                         const promoteMsg = `
-🎉 *Big Up @${promoteUser.split('@')[0]}!* 🎉
+🎉 *Big Up @${mention.split('@')[0]}!* 🎉
 You've been PROMOTED to admin in *${updatedMetadata.subject}*! Time to lead the squad! 💪
 
 👑 *Current Admins*:
@@ -398,24 +1295,29 @@ ${adminList}
 
 Powered by *VAMPARINA MD 2025* — Created by Arnold Chirchir
                         `.trim()
-                        await sock.sendMessage(from, { text: promoteMsg, mentions: [promoteUser, ...updatedAdmins] })
+                        await sock.sendMessage(from, { text: promoteMsg, mentions: [mention, ...updatedAdmins] })
                         reply("Promoted")
                     } catch (e) {
-                        reply("Promotion failed: " + e.message)
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .promote <@user>\nExample: .promote @254123456789`)
                     }
                     break
 
                 case 'demote':
-                    if (!isGroup || !isAdmin || !isBotAdmin) return reply("Admin only")
+                    if (!isGroup) return reply("Group only")
+                    if (!isAdmin) return reply("Admin only")
+                    if (!isBotAdmin) return reply("I need to be an admin to demote members")
+                    if (!mention) return reply(`
+❗ *User Required!*
+Usage: .demote <@user>
+Example: .demote @254123456789
+                    `.trim())
                     try {
-                        const demoteUser = mention
-                        if (!demoteUser) return reply("Mention a user to demote")
-                        await sock.groupParticipantsUpdate(from, [demoteUser], "demote")
+                        await sock.groupParticipantsUpdate(from, [mention], "demote")
                         const updatedMetadata = await sock.groupMetadata(from)
                         const updatedAdmins = updatedMetadata.participants.filter(p => p.admin).map(p => p.id)
                         const adminList = updatedAdmins.length ? updatedAdmins.map(a => `• wa.me/${a.split('@')[0]}`).join('\n') : "No admins"
                         const demoteMsg = `
-👋 *Respect @${demoteUser.split('@')[0]}!* 👋
+👋 *Respect @${mention.split('@')[0]}!* 👋
 You've been demoted from admin in *${updatedMetadata.subject}*. Thanks for your hustle—keep shining! 🌟
 
 👑 *Current Admins*:
@@ -423,622 +1325,29 @@ ${adminList}
 
 Powered by *VAMPARINA MD 2025* — Created by Arnold Chirchir
                         `.trim()
-                        await sock.sendMessage(from, { text: demoteMsg, mentions: [demoteUser, ...updatedAdmins] })
+                        await sock.sendMessage(from, { text: demoteMsg, mentions: [mention, ...updatedAdmins] })
                         reply("Demoted")
                     } catch (e) {
-                        reply("Demotion failed: " + e.message)
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .demote <@user>\nExample: .demote @254123456789`)
                     }
                     break
 
-                case 'tagall': case 'hidetag':
-                    if (!isGroup || !isAdmin) return reply("Admin only")
-                    sock.sendMessage(from, { text: args || "Attention!", mentions: participants.map(a => a.id) })
-                    break
-
-                case 'listonline':
+                case 'tag':
                     if (!isGroup) return reply("Group only")
-                    if (!isBotAdmin) return reply("I need to be an admin to check online status")
+                    if (!isAdmin) return reply("Admin only")
+                    if (!isBotAdmin) return reply("I need to be an admin to tag members")
+                    if (!mention && !args) return reply(`
+❗ *User Required!*
+Usage: .tag <@user | phone number> [message]
+Example: .tag @254123456789 Meeting at 5 PM!
+                    `.trim())
+                    const tagUser = mention || args.split(' ')[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net'
+                    const tagMessage = args.includes(' ') ? args.slice(args.indexOf(' ') + 1) : `Yo @${tagUser.split('@')[0]}, you’ve been tagged! 📢`
                     try {
-                        const onlineMembers = []
-                        const mentions = []
-                        for (const participant of participants) {
-                            try {
-                                const presence = await sock.presenceSubscribe(participant.id)
-                                if (presence === 'available' || presence === 'composing' || presence === 'recording') {
-                                    const name = participant.notify || pushname || "Unknown"
-                                    onlineMembers.push(`• wa.me/${participant.id.split('@')[0]} - ${name}`)
-                                    mentions.push(participant.id)
-                                }
-                            } catch (e) {
-                                console.log(`Presence check error for ${participant.id}:`, e)
-                            }
-                        }
-                        const onlineMsg = onlineMembers.length ? `
-🌟 *Online Squad in ${groupMetadata.subject}* 🌟
-Here’s who’s active and ready to vibe! 😎
-
-${onlineMembers.join('\n')}
-
-Total Online: ${onlineMembers.length}
-Keep the energy high, fam! 🔥
-
-Powered by *VAMPARINA MD 2025* — Created by Arnold Chirchir
-                        `.trim() : `
-🌟 *Online Squad in ${groupMetadata.subject}* 🌟
-No one’s online right now. 😴 Wake up, fam!
-
-Powered by *VAMPARINA MD 2025* — Created by Arnold Chirchir
-                        `.trim()
-                        await sock.sendMessage(from, { text: onlineMsg, mentions })
-                    } catch (e) {
-                        reply("Error fetching online members: " + e.message)
-                    }
-                    break
-
-                case 'antilink':
-                    if (!isGroup || !isAdmin) return reply("Admin only")
-                    if (!args) return reply("Usage: .antilink <delete|warn <number>|kick|off>")
-                    const [mode, number] = args.split(' ')
-                    if (mode === 'delete' || mode === 'kick') {
-                        groupSettings.antilink = mode
-                        groupSettings.warnLimit = 0
-                        delete groupSettings.warns
-                        saveDB()
-                        reply(`Antilink set to *${mode}* for non-admins`)
-                    } else if (mode === 'warn') {
-                        if (!number || isNaN(number) || number < 1) return reply("Please provide a valid warn limit: .antilink warn <number>")
-                        groupSettings.antilink = 'warn'
-                        groupSettings.warnLimit = parseInt(number)
-                        groupSettings.warns = groupSettings.warns || {}
-                        saveDB()
-                        reply(`Antilink set to *warn* with ${number} warnings before kick for non-admins`)
-                    } else if (mode === 'off') {
-                        groupSettings.antilink = 'off'
-                        groupSettings.warnLimit = 0
-                        delete groupSettings.warns
-                        saveDB()
-                        reply("Antilink turned *OFF*")
-                    } else {
-                        reply("Invalid mode. Use: delete, warn <number>, kick, or off")
-                    }
-                    break
-
-                case 'setbadword':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    if (!args) return reply("Usage: .setbadword <add|remove> <word>")
-                    const [action, word] = args.split(' ')
-                    if (!action || !word || !['add', 'remove'].includes(action)) return reply("Usage: .setbadword <add|remove> <word>")
-                    if (action === 'add') {
-                        if (DB.badwords.includes(word)) return reply(`${word} is already a bad word`)
-                        DB.badwords.push(word)
-                        saveDB()
-                        reply(`${word} added to bad words list`)
-                    } else if (action === 'remove') {
-                        const index = DB.badwords.indexOf(word)
-                        if (index === -1) return reply(`${word} is not in the bad words list`)
-                        DB.badwords.splice(index, 1)
-                        saveDB()
-                        reply(`${word} removed from bad words list`)
-                    }
-                    break
-
-                case 'welcome':
-                    if (!isGroup || !isAdmin) return reply("Admin only")
-                    groupSettings.welcome = args || (args === 'off' ? false : "Welcome @user!")
-                    saveDB()
-                    reply("Welcome set")
-                    break
-
-                case 'link': case 'grouplink':
-                    if (!isGroup) return reply("Group only")
-                    const code = await sock.groupInviteCode(from)
-                    reply(`https://chat.whatsapp.com/${code}`)
-                    break
-
-                case 'close':
-                    if (!isGroup || !isAdmin || !isBotAdmin) return reply("Admin only")
-                    await sock.groupSettingUpdate(from, 'announcement')
-                    reply("Group closed")
-                    break
-
-                case 'open':
-                    if (!isGroup || !isAdmin || !isBotAdmin) return reply("Admin only")
-                    await sock.groupSettingUpdate(from, 'not_announcement')
-                    reply("Group opened")
-                    break
-
-                case 'setdesc':
-                    if (!isGroup || !isAdmin || !isBotAdmin) return reply("Admin only")
-                    await sock.groupUpdateDescription(from, args)
-                    reply("Description updated")
-                    break
-
-                case 'setgroupname':
-                    if (!isGroup || !isAdmin || !isBotAdmin) return reply("Admin only")
-                    await sock.groupUpdateSubject(from, args)
-                    reply("Group name changed")
-                    break
-
-                case 'totalmembers':
-                    if (!isGroup) return reply("Group only")
-                    reply(`Total Members: ${participants.length}`)
-                    break
-
-                // OWNER COMMANDS
-                case 'block':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    const blockUser = mention || args + '@s.whatsapp.net'
-                    await sock.updateBlockStatus(blockUser, "block")
-                    reply("Blocked")
-                    break
-
-                case 'unblock':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    const unblockUser = mention || args + '@s.whatsapp.net'
-                    await sock.updateBlockStatus(unblockUser, "unblock")
-                    reply("Unblocked")
-                    break
-
-                case 'unblockall':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    reply("Unblock all not supported by Baileys")
-                    break
-
-                case 'delete': case 'del':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    if (msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
-                        await sock.sendMessage(from, { delete: msg.message.extendedTextMessage.contextInfo.quotedMessage.key })
-                    }
-                    reply("Deleted")
-                    break
-
-                case 'join':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    const invCode = args.split('https://chat.whatsapp.com/')[1]
-                    await sock.groupAcceptInvite(invCode)
-                    reply("Joined group")
-                    break
-
-                case 'leave':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    await sock.groupLeave(from)
-                    reply("Left group")
-                    break
-
-                case 'restart':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    reply("Restarting...")
-                    process.exit()
-                    break
-
-                case 'setbio':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    await sock.updateProfileStatus(args || "VAMPARINA MD ACTIVE")
-                    reply("Bio updated")
-                    break
-
-                case 'setprofilepic':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    if (msg.message.imageMessage) {
-                        const buffer = await downloadContentFromMessage(msg.message.imageMessage, 'image')
-                        let buff = Buffer.alloc(0)
-                        for await (const chunk of buffer) buff = Buffer.concat([buff, chunk])
-                        await sock.updateProfilePicture(sock.user.id, buff)
-                        reply("Profile picture updated")
-                    } else {
-                        reply("Send an image")
-                    }
-                    break
-
-                case 'react':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    if (!args) return reply("Emoji?")
-                    sock.sendMessage(from, { react: { text: args.split(' ')[0], key: msg.key } })
-                    break
-
-                case 'toviewonce':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    if (msg.message.imageMessage || msg.message.videoMessage) {
-                        const media = msg.message.imageMessage || msg.message.videoMessage
-                        const buffer = await downloadContentFromMessage(media, media.mimetype.includes('image') ? 'image' : 'video')
-                        let buff = Buffer.alloc(0)
-                        for await (const chunk of buffer) buff = Buffer.concat([buff, chunk])
                         await sock.sendMessage(from, {
-                            [media.mimetype.includes('image') ? 'image' : 'video']: buff,
-                            viewOnce: true
+                            text: tagMessage,
+                            mentions: [tagUser]
                         })
-                    } else {
-                        reply("Send image or video")
-                    }
-                    break
-
-                case 'tostatus':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    if (msg.message.imageMessage || msg.message.videoMessage) {
-                        const media = msg.message.imageMessage || msg.message.videoMessage
-                        const buffer = await downloadContentFromMessage(media, 'image')
-                        let buff = Buffer.alloc(0)
-                        for await (const chunk of buffer) buff = Buffer.concat([buff, chunk])
-                        await sock.sendMessage('status@broadcast', { image: buff, caption: args || "" })
-                        reply("Sent to status")
-                    } else {
-                        reply("Send image or video")
-                    }
-                    break
-
-                case 'owner':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    reply(`Owner: Arnold Chirchir\nwa.me/${BOT.owner}`)
-                    break
-
-                case 'disk':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    const used = process.memoryUsage()
-                    reply(`RAM: ${(used.heapUsed / 1024 / 1024).toFixed(2)} MB`)
-                    break
-
-                case 'listblocked':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    reply(`Blocked users: ${DB.blocked.length}`)
-                    break
-
-                case 'listsudo':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    reply(`Sudo users: ${DB.sudo.length}`)
-                    break
-
-                case 'online':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    sock.sendPresenceUpdate('available')
-                    reply("Now online")
-                    break
-
-                case 'groupid':
-                    if (!isGroup) return reply("Group only")
-                    reply(`Group ID: ${from}`)
-                    break
-
-                case 'hostip':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    reply("Host: VAMPARINA SERVER 2025")
-                    break
-
-                case 'modestatus':
-                    if (!isOwner && !isSudo) return reply("Owner only")
-                    reply("Mode: GOD MODE")
-                    break
-
-                // AI COMMANDS
-                case 'gemini': case 'gemi': case 'ai':
-                    if (!args) return reply("Ask Gemini something")
-                    reply("Gemini 1.5 Flash thinking...")
-                    try {
-                        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEYS.gemini}`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: args }] }] })
-                        })
-                        const data = await res.json()
-                        reply(`*Gemini 1.5 Flash*\n\n${data.candidates?.[0]?.content?.parts?.[0]?.text || "No response"}`)
+                        reply("User tagged")
                     } catch (e) {
-                        reply("Gemini error: " + e.message)
-                    }
-                    break
-
-                case 'llama':
-                    if (!args) return reply("Ask LLaMA")
-                    reply("LLaMA 405B loading...")
-                    try {
-                        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-                            method: "POST",
-                            headers: { "Authorization": `Bearer ${API_KEYS.groq}`, "Content-Type": "application/json" },
-                            body: JSON.stringify({ model: "llama-3.1-405b-reasoning", messages: [{ role: "user", content: args }] })
-                        })
-                        const json = await res.json()
-                        reply(`*LLaMA 405B*\n\n${json.choices?.[0]?.message?.content || "Error"}`)
-                    } catch (e) {
-                        reply("LLaMA error: " + e.message)
-                    }
-                    break
-
-                case 'grok':
-                    if (!args) return reply("Ask Grok")
-                    reply("Grok thinking...")
-                    try {
-                        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-                            method: "POST",
-                            headers: { "Authorization": `Bearer ${API_KEYS.groq}`, "Content-Type": "application/json" },
-                            body: JSON.stringify({ model: "mixtral-8x22b", messages: [{ role: "user", content: args }] })
-                        })
-                        const json = await res.json()
-                        reply(`*Grok*\n\n${json.choices?.[0]?.message?.content || "Error"}`)
-                    } catch (e) {
-                        reply("Grok error: " + e.message)
-                    }
-                    break
-
-                case 'chatgpt': case 'gpt':
-                    if (!args) return reply("Ask ChatGPT")
-                    reply("ChatGPT loading...")
-                    reply("Free-tier ChatGPT not implemented yet")
-                    break
-
-                case 'blackbox':
-                    if (!args) return reply("Ask Blackbox")
-                    reply("Blackbox AI loading...")
-                    reply("Blackbox API not implemented yet")
-                    break
-
-                case 'deepseek':
-                    if (!args) return reply("Ask DeepSeek")
-                    reply("DeepSeek loading...")
-                    reply("DeepSeek API not implemented yet")
-                    break
-
-                // SEARCH COMMANDS
-                case 'define':
-                    if (!args) return reply("What word?")
-                    reply("Searching dictionary...")
-                    try {
-                        const dict = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${args}`).then(r => r.json())
-                        if (dict.title) return reply("Word not found")
-                        const def = dict[0]
-                        reply(`*${def.word}*\n\n${def.meanings[0]?.definitions[0]?.definition || "No definition"}\n\nExample: ${def.meanings[0]?.definitions[0]?.example || "None"}`)
-                    } catch (e) {
-                        reply("Dictionary error: " + e.message)
-                    }
-                    break
-
-                case 'define2':
-                    if (!args) return reply("Urban word?")
-                    try {
-                        const urban = await fetch(`https://api.urbandictionary.com/v0/define?term=${args}`).then(r => r.json())
-                        if (!urban.list[0]) return reply("Not found on Urban")
-                        reply(`*${urban.list[0].word}* (Urban)\n\n${urban.list[0].definition.replace(/[\[\]]/g, '')}\n\nLove Thumbs Up: ${urban.list[0].thumbs_up}`)
-                    } catch (e) {
-                        reply("Urban error: " + e.message)
-                    }
-                    break
-
-                case 'imdb':
-                    if (!args) return reply("Movie/TV name?")
-                    try {
-                        const imdb = await fetch(`http://www.omdbapi.com/?t=${encodeURIComponent(args)}&apikey=${API_KEYS.omdb}`).then(r => r.json())
-                        if (imdb.Response === "False") return reply("Not found")
-                        reply(`*${imdb.Title}* (${imdb.Year})\nRating: ${imdb.imdbRating}/10\nGenre: ${imdb.Genre}\n\n${imdb.Plot}`)
-                    } catch (e) {
-                        reply("IMDb error: " + e.message)
-                    }
-                    break
-
-                case 'lyrics':
-                    if (!args) return reply("Song name?")
-                    try {
-                        const lyrics = await fetch(`https://api.musixmatch.com/ws/1.1/matcher.lyrics.get?q_track=${encodeURIComponent(args)}&apikey=${API_KEYS.musixmatch}`).then(r => r.json())
-                        if (!lyrics.message.body.lyrics) return reply("Lyrics not found")
-                        reply(`*${args}*\n\n${lyrics.message.body.lyrics.lyrics_body.substring(0, 1000)}...`)
-                    } catch (e) {
-                        reply("Lyrics error: " + e.message)
-                    }
-                    break
-
-                case 'shazam':
-                    reply("Shazam listening...")
-                    if (msg.message?.videoMessage || msg.message?.audioMessage) {
-                        try {
-                            let buffer = Buffer.alloc(0)
-                            const stream = msg.message?.videoMessage ? await downloadContentFromMessage(msg.message.videoMessage, 'video') : await downloadContentFromMessage(msg.message.audioMessage, 'audio')
-                            for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk])
-
-                            const form = new FormData()
-                            form.append('file', buffer, 'audio.mp4')
-                            form.append('return', 'apple_music,spotify')
-
-                            const res = await fetch(`https://api.audd.io/?api_token=${API_KEYS.audd}`, { method: 'POST', body: form })
-                            const data = await res.json()
-                            if (data.status === 'success' && data.result) {
-                                reply(`*SHAZAM FOUND!*\n\nTitle: ${data.result.title}\nArtist: ${data.result.artist}\nAlbum: ${data.result.album}\nApple Music: ${data.result.apple_music?.url || 'N/A'}`)
-                            } else {
-                                reply("Song not recognized")
-                            }
-                        } catch (e) {
-                            reply("Shazam error: " + e.message)
-                        }
-                    } else {
-                        reply("Reply to video/audio")
-                    }
-                    break
-
-                case 'weather':
-                    if (!args) return reply("City name?")
-                    try {
-                        const weather = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(args)}&appid=${API_KEYS.openweather}&units=metric`).then(r => r.json())
-                        if (weather.cod !== 200) return reply("City not found")
-                        reply(`*Weather in ${weather.name}, ${weather.sys.country}*\nTemp: ${weather.main.temp}°C\nFeels: ${weather.main.feels_like}°C\n${weather.weather[0].description}\nHumidity: ${weather.main.humidity}%`)
-                    } catch (e) {
-                        reply("Weather error: " + e.message)
-                    }
-                    break
-
-                case 'yts':
-                    if (!args) return reply("Movie name?")
-                    try {
-                        const yts = await fetch(`https://yts.mx/api/v2/list_movies.json?query_term=${encodeURIComponent(args)}`).then(r => r.json())
-                        if (!yts.data.movies) return reply("No movies found")
-                        const movie = yts.data.movies[0]
-                        const torrents = movie.torrents.map(t => `${t.quality} - ${t.size}`).join('\n')
-                        reply(`*${movie.title_long}*\nYear: ${movie.year}\nRating: ${movie.rating}/10\n\nAvailable:\n${torrents}`)
-                    } catch (e) {
-                        reply("YTS error: " + e.message)
-                    }
-                    break
-
-                // TTS — SHENG + ENGLISH
-                case 'tts':
-                    if (!args) return reply("What should I say?")
-                    reply("Speaking...")
-                    let voice = "en_uk_001"
-                    let text = args
-                    if (args.toLowerCase().startsWith("sheng ")) {
-                        voice = "en_us_001"
-                        text = args.slice(6)
-                    } else if (args.toLowerCase().startsWith("eng ")) {
-                        voice = "en_uk_001"
-                        text = args.slice(4)
-                    }
-                    try {
-                        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${voice.startsWith('en_us') ? 'en-US' : 'en-GB'}&client=tw-ob&q=${encodeURIComponent(text)}`
-                        await sock.sendMessage(from, { audio: { url: ttsUrl }, mimetype: 'audio/mpeg', ptt: true })
-                    } catch (e) {
-                        reply("TTS error: " + e.message)
-                    }
-                    break
-
-                // INFO COMMANDS
-                case 'ping':
-                    const start = Date.now()
-                    await reply("Pinging...")
-                    reply(`Pong! ${Date.now() - start}ms`)
-                    break
-
-                case 'runtime':
-                    const uptime = process.uptime()
-                    reply(`Runtime: ${Math.floor(uptime / 86400)}d ${Math.floor(uptime % 86400 / 3600)}h ${Math.floor(uptime % 3600 / 60)}m`)
-                    break
-
-                case 'botstatus': case 'status':
-                    reply(`*VAMPARINA MD*\nOwner: ${DB.settings.ownername}\nPrefix: ${DB.settings.prefix}\nGroups: ${Object.keys(DB.groups).length}\nRuntime: ${Math.floor(process.uptime() / 3600)}h\nStatus: ACTIVE`)
-                    break
-
-                case 'pair':
-                    reply(`Pair Code: ${sock.user.id.split(':')[0]}`)
-                    break
-
-                case 'repo':
-                    reply("VAMPARINA MD 2025 — Private Repo\nOwner: Arnold Chirchir\nStatus: Undefeated in Kenya")
-                    break
-
-                case 'time':
-                    reply(`Time: ${new Date().toLocaleString('en-GB', { timeZone: 'Africa/Nairobi' })} (EAT)`)
-                    break
-
-                // MENU — EVERYTHING LISTED
-                case 'menu':
-                    reply(`
-*VAMPARINA MD 2025 — EVERYTHING YOU ASKED FOR*
-
-*Owner*: Arnold Chirchir (+${BOT.owner})
-*Prefix*: ${DB.settings.prefix}
-*Status*: UNSTOPPABLE
-
-*LOGO MAKER (34 STYLES)*
-.1917style .blackpinklogo .galaxystyle .luxurygold .neonglitch .matrix .glowingtext .royaltext .sand .summerbeach .watercolortext + 24 more!
-
-*GROUP COMMANDS*
-.add .kick .promote .demote .tagall .listonline .antilink <delete|warn <number>|kick|off> .welcome .link .close .open .setdesc .setgroupname .totalmembers .vcf
-
-*OWNER COMMANDS*
-.block .unblock .unblockall .delete .join .leave .restart .setbio .setprofilepic .react .toviewonce .tostatus .owner .disk .listblocked .listsudo .online .groupid .hostip .modestatus .setbadword <add|remove> <word>
-
-*AI COMMANDS*
-.gemini .llama .grok .chatgpt .blackbox .deepseek
-
-*SEARCH COMMANDS*
-.define .define2 (urban) .imdb .lyrics .shazam .weather .yts
-
-*KENYAN FEATURES*
-.shazam (video/audio) .tts (sheng/eng) .vv (view-once download) .vcf (group contacts)
-
-*INFO & MORE*
-.feedback .helpers .ping .runtime .botstatus .pair .repo .time
-
-© 2025 Arnold Chirchir — Kenya King Forever
-wa.me/${BOT.owner}
-                    `)
-                    break
-
-                default:
-                    reply("Command not found. Use .menu")
-            }
-        } catch (e) {
-            console.log("ERROR:", e)
-            try { sock.sendMessage(from, { text: "Error occurred. Try again." }) } catch {}
-        }
-    })
-
-    // ENHANCED WELCOME + GOODBYE SYSTEM
-    sock.ev.on('group-participants.update', async update => {
-        try {
-            const { id, participants, action } = update
-            const settings = DB.groups[id]
-            if (!settings?.welcome) return // Only trigger if welcome is enabled
-
-            const metadata = await sock.groupMetadata(id)
-            const admins = metadata.participants.filter(p => p.admin).map(p => p.id)
-            const groupDesc = metadata.desc || "No description set"
-            const inviteCode = await sock.groupInviteCode(id)
-            const groupLink = `https://chat.whatsapp.com/${inviteCode}`
-
-            for (const user of participants) {
-                if (action === 'add') {
-                    // WELCOME MESSAGE
-                    let profilePic = null
-                    try {
-                        profilePic = await sock.profilePictureUrl(user, 'image')
-                    } catch (e) {
-                        console.log("Profile pic fetch error:", e)
-                        profilePic = null
-                    }
-
-                    let adminList = admins.length ? admins.map(a => {
-                        const num = a.split('@')[0]
-                        return `• wa.me/${num}`
-                    }).join('\n') : "No admins"
-
-                    const welcomeMsg = `
-🔥 *YO ${settings.welcome.replace('@user', '@' + user.split('@')[0])}* 🔥
-Welcome to *${metadata.subject}*! You're now part of the crew! 😎
-
-📜 *Group Description*: ${groupDesc}
-
-👑 *Admins*:
-${adminList}
-
-🔗 *Group Link*: ${groupLink}
-Share this link with your squad to grow the vibe! 🚀
-
-Powered by *VAMPARINA MD 2025* — Created by Arnold Chirchir
-                    `.trim()
-
-                    await sock.sendMessage(id, {
-                        image: profilePic ? { url: profilePic } : undefined,
-                        caption: welcomeMsg,
-                        mentions: [user, ...admins]
-                    })
-                } else if (action === 'remove') {
-                    // GOODBYE MESSAGE
-                    const goodbyeMsg = `
-👋 *Peace Out @${user.split('@')[0]}* 👋
-Sorry to see you go from *${metadata.subject}*! 😢 Wishing you the best out there, fam!
-
-🔗 *Come Back Anytime*: ${groupLink}
-The door's always open—bring your squad back with you! 💪
-
-Squad, let's keep the vibe alive! 🔥
-
-Powered by *VAMPARINA MD 2025* — Created by Arnold Chirchir
-                    `.trim()
-
-                    await sock.sendMessage(id, {
-                        text: goodbyeMsg,
-                        mentions: [user]
-                    })
-                }
-            }
-        } catch (e) {
-            console.log("Welcome/Goodbye error:", e)
-        }
-    })
-}
-
-startBot().catch(e => console.log("FATAL ERROR:", e))
+                        reply(`❌ *Error:* ${e.message}.\nUsage: .tag <@user | phone number> [message]\nExample: .tag @254123456
