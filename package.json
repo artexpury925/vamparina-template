@@ -1,14 +1,51 @@
 {
   "name": "vamparina-md",
-  "version": "GOD 2025",
-  "type": "module",
+  "version": "2025.0.0",
+  "description": "VAMPARINA MD - A feature-rich WhatsApp bot by Arnold Chirchir",
   "main": "index.js",
-  "scripts": { "start": "node index.js" },
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "install": "npm install",
+    "update": "npm install @whiskeysockets/baileys@latest",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "jest"
+  },
+  "author": "Arnold Chirchir",
+  "license": "MIT",
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.8",
-    "pino": "^9.0.0",
+    "pino": "^8.17.2",
     "node-fetch": "^3.3.2",
     "form-data": "^4.0.0",
-    "wa-sticker-formatter": "^4.4.4"
-  }
+    "wa-sticker-formatter": "^4.3.2",
+    "ytdl-core": "^4.11.5",
+    "adm-zip": "^0.5.10",
+    "chalk": "^5.3.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0",
+    "prettier": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/artexpury925/vamparina-md.git"
+  },
+  "keywords": [
+    "whatsapp",
+    "bot",
+    "vamparina",
+    "baileys"
+  ],
+  "bugs": {
+    "url": "https://github.com/artexpury925/vamparina-md/issues"
+  },
+  "homepage": "https://github.com/artexpury925/vamparina-md#readme"
 }
