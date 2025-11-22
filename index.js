@@ -236,6 +236,33 @@ async function startBot() {
             }
             saveDB()
 
+            // AUTO BLOCK MESSAGES FROM BANNED USERS
+            if (isGroup && groupSettings.banned?.includes(sender)) {
+                try {
+                    await sock.sendMessage(from, { delete: msg.key })
+                    // Send DM to banned user (only once per session to avoid spam)
+                    if (!DB.messages[msg.key.id].notifiedBanned) {
+                        await sock.sendMessage(sender, {
+                            text: `
+🚫 *You Are Banned*
+
+You cannot send messages in *${groupMetadata.subject}* because you have been banned.
+
+To get unbanned, contact a group admin:
+${admins.map(a => `• wa.me/${a.split('@')[0]}`).join('\n')}
+
+— Powered by VAMPARINA MD 2025
+                            `.trim()
+                        })
+                        DB.messages[msg.key.id].notifiedBanned = true
+                        saveDB()
+                    }
+                } catch (e) {
+                    console.log("Auto-block banned user error:", e)
+                }
+                return // Stop processing the message
+            }
+
             const pushname = msg.pushName || "User"
             const isOwner = sender.split('@')[0] === BOT.owner
             const isSudo = DB.sudo.includes(sender)
@@ -1228,9 +1255,9 @@ Usage: .ban <@user> or .ban <phone number>
 Example: .ban @254123456789
                     `.trim())
                     const banUser = mention || args.replace(/[^0-9]/g, '') + '@s.whatsapp.net'
-                    if (groupSettings.banned?.includes(banUser)) {
-                        return reply(`❗ *User Already Banned!* @${banUser.split('@')[0]} is already on the ban list.`, { mentions: [banUser] })
-                    }
+                    if (banUser === sock.user.id) return reply("I can't ban myself! 😅")
+                    if (DB.sudo.includes(banUser)) return reply("You can't ban a sudo user.")
+                    if (groupSettings.banned?.includes(banUser)) return reply(`❗ *User Already Banned!* @${banUser.split('@')[0]} is already banned.`, { mentions: [banUser] })
                     try {
                         groupSettings.banned = groupSettings.banned || []
                         groupSettings.banned.push(banUser)
@@ -1256,9 +1283,7 @@ Usage: .unban <@user> or .unban <phone number>
 Example: .unban @254123456789
                     `.trim())
                     const unbanUser = mention || args.replace(/[^0-9]/g, '') + '@s.whatsapp.net'
-                    if (!groupSettings.banned?.includes(unbanUser)) {
-                        return reply(`❗ *User Not Banned!* @${unbanUser.split('@')[0]} is not on the ban list.`, { mentions: [unbanUser] })
-                    }
+                    if (!groupSettings.banned?.includes(unbanUser)) return reply(`❗ *User Not Banned!* @${unbanUser.split('@')[0]} is not on the ban list.`, { mentions: [unbanUser] })
                     try {
                         groupSettings.banned = groupSettings.banned.filter(u => u !== unbanUser)
                         saveDB()
@@ -1332,22 +1357,38 @@ Powered by *VAMPARINA MD 2025* — Created by Arnold Chirchir
                     }
                     break
 
-                case 'tag':
+                // NEW BAN COMMAND — BANS USER FROM SENDING MESSAGES + SENDS DM
+                case 'ban':
                     if (!isGroup) return reply("Group only")
                     if (!isAdmin) return reply("Admin only")
-                    if (!isBotAdmin) return reply("I need to be an admin to tag members")
+                    if (!isBotAdmin) return reply("I need to be an admin to ban members")
                     if (!mention && !args) return reply(`
 ❗ *User Required!*
-Usage: .tag <@user | phone number> [message]
-Example: .tag @254123456789 Meeting at 5 PM!
+Usage: .ban <@user> or .ban <phone number>
+Example: .ban @254123456789
                     `.trim())
-                    const tagUser = mention || args.split(' ')[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net'
-                    const tagMessage = args.includes(' ') ? args.slice(args.indexOf(' ') + 1) : `Yo @${tagUser.split('@')[0]}, you’ve been tagged! 📢`
+                    const banUserNew = mention || args.replace(/[^0-9]/g, '') + '@s.whatsapp.net'
+                    if (banUserNew === sock.user.id) return reply("I can't ban myself! 😅")
+                    if (DB.sudo.includes(banUserNew)) return reply("You can't ban a sudo user.")
+                    if (groupSettings.banned?.includes(banUserNew)) return reply(`❗ *User Already Banned!* @${banUserNew.split('@')[0]} is already banned.`, { mentions: [banUserNew] })
                     try {
-                        await sock.sendMessage(from, {
-                            text: tagMessage,
-                            mentions: [tagUser]
+                        groupSettings.banned = groupSettings.banned || []
+                        groupSettings.banned.push(banUserNew)
+                        saveDB()
+                        // Kick the user from the group
+                        await sock.groupParticipantsUpdate(from, [banUserNew], "remove")
+                        // Send DM to banned user
+                        await sock.sendMessage(banUserNew, {
+                            text: `
+🚫 *You Have Been Banned*
+
+You are banned from sending messages in *${groupMetadata.subject}*.
+
+To get unbanned, contact a group admin:
+${admins.map(a => `• wa.me/${a.split('@')[0]}`).join('\n')}
+
+— Powered by VAMPARINA MD 2025
+                            `.trim()
                         })
-                        reply("User tagged")
-                    } catch (e) {
-                        reply(`❌ *Error:* ${e.message}.\nUsage: .tag <@user | phone number> [message]\nExample: .tag @254123456
+                        await sock.sendMessage(from, {
+                            text: `🚫 *User Banned!* @${banUserNew.split('@')[0]} has been banned from *${groupMetadata.subject}*. They cannot send messages until
