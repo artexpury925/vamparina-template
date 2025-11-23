@@ -23,7 +23,8 @@
     "wa-sticker-formatter": "^4.3.2",
     "ytdl-core": "^4.11.5",
     "adm-zip": "^0.5.10",
-    "chalk": "^5.3.0"
+    "chalk": "^5.3.0",
+    "node-cache": "^5.1.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.1",
@@ -36,7 +37,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/artexpury925/vamparina-md.git"
+    "url": "https://github.com/artexpury925/vamparina-template.git"
   },
   "keywords": [
     "whatsapp",
@@ -45,7 +46,7 @@
     "baileys"
   ],
   "bugs": {
-    "url": "https://github.com/artexpury925/vamparina-md/issues"
+    "url": "https://github.com/artexpury925/vamparina-template/issues"
   },
-  "homepage": "https://github.com/artexpury925/vamparina-md#readme"
+  "homepage": "https://github.com/artexpury925/vamparina-template#readme"
 }
