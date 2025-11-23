@@ -1,4 +1,4 @@
-cd ~/vamparina-md && rm -f index.js && cat > index.js << 'EOF' && pm2 restart VAMPARINA && pm2 save && termux-wake-lock && mkdir -p ~/.termux/boot && echo '#!/data/data/com.termux/files/usr/bin/sh\ntermux-wake-lock\ncd ~/vamparina-md\npm install\nnpm start\n' > ~/.termux/boot/start-vamparina.sh && chmod +x ~/.termux/boot/start-vamparina.sh && echo "VAMPARINA MD is LIVE 24/7! Fixed syntax error. Check logs: pm2 logs VAMPARINA"
+
 // VAMPARINA MD - WhatsApp Bot by Arnold Chirchir
 // Powered by Baileys, Node.js, and a whole lotta vibe
 import makeWASocket, { DisconnectReason, makeCacheableSignalKeyStore, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
